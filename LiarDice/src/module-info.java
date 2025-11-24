@@ -1,0 +1,9 @@
+/**
+ * 
+ */
+/**
+ * @author Jorge
+ *
+ */
+module LiarDice {
+}
