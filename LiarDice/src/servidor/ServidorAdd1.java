@@ -1,23 +1,26 @@
 package servidor;
 
-import java.io.*;
-import java.net.*;
-import java.util.concurrent.*;
+import java.io.IOException;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public class ServidorAdd1 {
 
-
-	public static void main(String[] args) throws ClassNotFoundException {
+    public static void main(String[] args) {
         ExecutorService pool = Executors.newCachedThreadPool();
-        try(ServerSocket ss = new ServerSocket(55556)){
-            while(true) {
-                try{
-                    Socket s = ss.accept();
-                    ThreadAdd ts = new ThreadAdd(s);
-                    pool.execute(ts);
+        final int PORT = 55555; // Debe coincidir con el puerto que usa el cliente
 
-                }
-                catch(Exception e) {
+        try (ServerSocket ss = new ServerSocket(PORT)) {
+            System.out.println("Servidor escuchando en puerto " + PORT);
+            while (true) {
+                try {
+                    Socket s = ss.accept();
+                    System.out.println("Cliente conectado desde " + s.getRemoteSocketAddress());
+                    ThreadAdd handler = new ThreadAdd(s);
+                    pool.execute(handler);
+                } catch (Exception e) {
                     e.printStackTrace();
                 }
             }
@@ -26,5 +29,4 @@ public class ServidorAdd1 {
             pool.shutdown();
         }
     }
-	}
-
+}

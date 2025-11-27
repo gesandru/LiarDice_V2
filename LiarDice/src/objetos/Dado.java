@@ -18,21 +18,21 @@ public class Dado implements Serializable {
     }
 
 
+    @Override
     public String toString() {
-        return "Carta{" +
-                ", numero=" + this.numero +
-                '}';}
+        return "Dado{numero=" + this.numero + '}';
+    }
+
 
 
     public void mostrar(){
         System.out.println("d"+this.numero);}
 
-    public boolean equals(Dado d){
-        if(d.getNumero()==this.getNumero()){
-            return true;
-        }
-        else{
-            return false;
-        }
+    @Override
+    public boolean equals(Object o) {
+        if (this == o) return true;
+        if (!(o instanceof Dado)) return false;
+        Dado d = (Dado) o;
+        return d.numero == this.numero;
     }
 }
