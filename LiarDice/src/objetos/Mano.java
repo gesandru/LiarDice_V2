@@ -43,7 +43,8 @@ public class Mano implements Serializable {
         Dado aux;
         while(j<i){
             n = r.nextInt(6);
-            aux = t.get(n);
+            //Corregido un error que hacía que todos los jugadores usaban los mismos datos
+            aux = new Dado(t.get(n).getNumero());
             this.dados.add(aux);
             j++;
         }

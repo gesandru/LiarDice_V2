@@ -54,16 +54,33 @@ public class Jugador implements Serializable {
             sb.append("2. Llamar mentiroso");
             System.out.println(sb);
             while (b){
-                i = scanner.nextInt();
+            	String opcion = scanner.next();
+            	//Hay que evitar que tomen opciones no válidas
+            	if (!opcion.matches("[12]")) {
+            	    System.out.println(sbError);
+            	    continue;
+            	}
+            	i = Integer.parseInt(opcion);
                 switch (i) {
                     case 1:
                         s = scanner.next();
                         sa = s.split("d");
+                        //Comprueba que la apuesta sea válida
+                        if (sa.length != 2 || !sa[0].matches("\\d+") || !sa[1].matches("\\d+")) {
+                            System.out.println(apuestaIncorrecta);
+                            continue;
+                        }
+                        //Comprueba que la apuesta previa sea válida
+                        if (!ultimaApuesta.matches("\\d+d\\d+")) {
+                            System.out.println("La apuesta anterior no es válida: " + ultimaApuesta);
+                            return "ERROR"; // o alguna acción apropiada
+                        }
                         sa2 = ultimaApuesta.split("d");
-                        k = Character.getNumericValue(sa[0].charAt(0));
-                        l = Character.getNumericValue(sa[1].charAt(0));
-                        n = Character.getNumericValue(sa2[0].charAt(0));
-                        m = Character.getNumericValue(sa2[1].charAt(0));
+                        //Cambiado la conversión por una más simple
+                        k = Integer.parseInt(sa[0]);
+                        l = Integer.parseInt(sa[1]);
+                        n = Integer.parseInt(sa2[0]);
+                        m = Integer.parseInt(sa2[1]);
                         if(k>0){
                             if(k==n){
                                 if(l>m){
