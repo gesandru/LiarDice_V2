@@ -10,7 +10,7 @@ public class ServidorAdd1 {
 
     public static void main(String[] args) {
         ExecutorService pool = Executors.newCachedThreadPool();
-        final int PORT = 55555; // Debe coincidir con el puerto que usa el cliente
+        final int PORT = 55556;
 
         try (ServerSocket ss = new ServerSocket(PORT)) {
             System.out.println("Servidor escuchando en puerto " + PORT);

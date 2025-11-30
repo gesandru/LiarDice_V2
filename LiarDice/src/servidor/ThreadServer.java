@@ -27,6 +27,7 @@ public class ThreadServer implements Runnable {
             System.out.println("Thread " + contador + " → replica port " + port);
 
             backend = new Socket("localhost", port);
+            contador++;
 
             // Conectamos al cliente con uno de los servidores para el juego
             Thread t1 = proxy(cliente.getInputStream(), backend.getOutputStream());

@@ -1,9 +1,6 @@
 package servidor;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.io.PrintWriter;
+import java.io.*;
 import java.net.Socket;
 import java.util.ArrayList;
 
@@ -11,241 +8,231 @@ import objetos.Dado;
 import objetos.Jugador;
 
 /**
- * ThreadAdd: maneja un juego completo con un único cliente que controla
- * las decisiones de todos los jugadores (modo A).
- *
- * Comunicación por texto:
- * - El cliente primero manda: número de jugadores (línea)
- * - Servidor responde con el mismo número (confirmación)
- * - Cliente envía N nombres (N líneas)
- * - Servidor inicia la partida usando mensajes tipo:
- *     INFO:...
+ * ThreadAdd: servidor que gestiona todos los jugadores desde una sola conexión cliente.
+ * Protocolo (textual):
+ * - Cliente envía nombres separados por coma en la primera línea: "pepe,ana,juan"
+ * - Servidor por cada ronda envía:
+ *     TOTAL:<int>
+ *   y por cada turno:
  *     TURNO:<nombre>
- *     PEDIR_APUESTA
- *     RONDA_TERMINADA
- *     GANADOR:<nombre>
- *
- * Cliente responde a PEDIR_APUESTA con:
- *    M   (mentiroso)
- *  o k dL  (ej: "3 d4")
+ *     MANO:<string>
+ *     APUESTA_ANT:<string>   (ej: "1 d3")
+ *     DADOS_ANT:<int>
+ * - Cliente responde:
+ *     APUESTA:<k dL>   (ej: "APUESTA:3 d4")
+ *   o
+ *     MIENTES
+ * - Si la apuesta es inválida, servidor responde:
+ *     ERROR:APUESTA_INCORRECTA
+ *   y vuelve a pedir acción al mismo jugador.
+ * - Si la apuesta es válida, servidor responde:
+ *     OK
+ * - Si el cliente ha dicho MIENTES, servidor evalúa y responde:
+ *     RESULTADO:...
+ *     RONDATERMINADA:true
+ * - Al final del juego servidor envía:
+ *     WINNER:<nombre>
  */
 public class ThreadAdd implements Runnable {
 
     private final Socket socket;
 
-    public ThreadAdd(Socket s) {
-        this.socket = s;
+    public ThreadAdd(Socket socket) {
+        this.socket = socket;
     }
 
     @Override
     public void run() {
-        try (BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-             PrintWriter out = new PrintWriter(socket.getOutputStream(), true)) {
-
-            // 1) Recibir número de jugadores y confirmar
-            String line = in.readLine();
-            if (line == null) return;
-            int numJugadores;
-            try {
-                numJugadores = Integer.parseInt(line.trim());
-            } catch (NumberFormatException nfe) {
-                out.println("INFO:ERROR: número de jugadores inválido");
+        try (
+            BufferedReader br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
+            PrintWriter pw = new PrintWriter(socket.getOutputStream(), true)
+        ) {
+            // 1) Leer nombres (una línea: "pepe,ana,juan")
+            String lineaJugadores = br.readLine();
+            if (lineaJugadores == null || lineaJugadores.trim().isEmpty()) {
+                pw.println("ERROR: no se recibieron nombres");
                 return;
             }
-            // Confirmación
-            out.println(String.valueOf(numJugadores));
+            String[] nombres = lineaJugadores.split(",");
 
-            // 2) Leer nombres y crear jugadores
             ArrayList<Jugador> jugadores = new ArrayList<>();
-            for (int i = 0; i < numJugadores; i++) {
-                String nombre = in.readLine();
-                if (nombre == null) {
-                    out.println("INFO:ERROR: falta nombre de jugador");
-                    return;
-                }
-                Jugador j = new Jugador(nombre.trim());
-                jugadores.add(j);
+            for (String nombre : nombres) {
+                jugadores.add(new Jugador(nombre.trim()));
             }
 
-            out.println("INFO: Jugadores registrados. Comienza la partida.");
-
-            // Variables del juego
+            String apuesta = "0 d1";  // apuesta inicial
+            Jugador jugadorAnterior = null;
             boolean winner = false;
-            boolean ronda = false;
-            String apuesta = "0 d1"; // apuesta inicial
-            Jugador jugadorAnterior = jugadores.get(jugadores.size() - 1); // como en la versión original
-            int dadosJugadorAnterior = jugadorAnterior.getDadosEnMano();
 
-            // Bucle principal de la partida
             while (!winner) {
-                // Preparar nueva ronda: lanzar/renovar dados internamente
-                ArrayList<Dado> todosDados = new ArrayList<>();
-                int manosVacias = 0;
+                // Preparar nueva ronda: cada jugador lanza sus dados
+                ArrayList<Dado> dadosEnMesa = new ArrayList<>();
+                int sinDados = 0;
                 for (Jugador j : jugadores) {
-                    j.Nuevoturno(); // suponiendo que esto rellena la mano
-                    todosDados.addAll(j.getMano().getDados());
-                    if (j.getMano().Vacio()) manosVacias++;
+                    j.Nuevoturno();
+                    dadosEnMesa.addAll(j.getMano().getDados());
+                    if (j.getMano().Vacio()) sinDados++;
                 }
 
-                // Si sólo queda 1 jugador con dados, la ronda/patada puede finalizar
-                if (manosVacias == jugadores.size() - 1) {
-                    // Hay una ronda "forzada" en la que no se jugará (se puede detectar después)
-                    ronda = true;
-                } else {
-                    ronda = false;
+                // Enviar total de dados en mesa
+                int totalDados = dadosEnMesa.size();
+                pw.println("TOTAL:" + totalDados);
+
+                // Si solo queda 1 jugador con dados, finaliza la partida
+                if (sinDados == jugadores.size() - 1) {
+                    winner = true;
+                    // se informará abajo
                 }
 
-                // Enviar información al cliente
-                out.println("INFO: DADOS_TOTALES:" + todosDados.size());
+                boolean rondaTerminada = false;
+                int turno = 0;
 
-                // Reset apuesta inicial por si correspondiera
-                apuesta = "0 d1";
-                jugadorAnterior = jugadores.get(jugadores.size() - 1);
-                dadosJugadorAnterior = jugadorAnterior.getDadosEnMano();
+                while (!rondaTerminada) {
+                    turno = turno % jugadores.size();
+                    Jugador actual = jugadores.get(turno);
 
-                // Bucle de la ronda
-                while (!ronda) {
-                    for (int i = 0; i < jugadores.size() && !ronda; i++) {
-                        Jugador turno = jugadores.get(i);
-                        if (turno.getMano().Vacio()) {
-                            // Saltar si no tiene dados
-                            continue;
-                        }
+                    if (!actual.getMano().Vacio()) {
+                        String manoString = actual.getMano().Mostrar().toString(); // "2 d4 2 d6"
+                        int dadosAnterior = (jugadorAnterior == null) ? 0 : jugadorAnterior.getDadosEnMano();
 
-                        // Informar turno y dar contexto
-                        out.println("TURNO:" + turno.getName());
-                        out.println("INFO:APUESTA_ACTUAL:" + apuesta);
-                        out.println("INFO:DADOS_JUGADOR_ANTERIOR:" + dadosJugadorAnterior);
-                        out.println("INFO:DADOS_TOTALES:" + todosDados.size());
-                        out.println("PEDIR_APUESTA");
+                        // Enviar contexto al cliente
+                        pw.println("TURNO:" + actual.getName());
+                        pw.println("MANO:" + manoString);
+                        pw.println("APUESTA_ANT:" + apuesta);
+                        pw.println("DADOS_ANT:" + dadosAnterior);
 
-                        // Leer respuesta del cliente (apuesta o M)
-                        String respuesta = in.readLine();
+                        // Esperar acción del cliente (APUESTA:... o MIENTES)
+                        String respuesta = br.readLine();
                         if (respuesta == null) {
-                            out.println("INFO:ERROR: cliente desconectado");
+                            // Cliente desconectado
+                            pw.println("ERROR: cliente desconectado");
                             return;
                         }
                         respuesta = respuesta.trim();
 
-                        if (respuesta.equalsIgnoreCase("M")) {
-                            // Se acusa de mentiroso: comprobar la apuesta actual
-                            // Parsear apuesta actual (formato "k dL")
-                            int k = parseKFromApuesta(apuesta);
-                            int l = parseLFromApuesta(apuesta);
-
-                            // Contar caras
-                            int[] cont = new int[7]; // índices 1..6
-                            for (Dado d : todosDados) {
-                                int num = d.getNumero();
-                                if (num >= 1 && num <= 6) cont[num]++;
-                            }
-
-                            boolean apuestaCumple = false;
-                            if (l >= 1 && l <= 6) {
-                                apuestaCumple = (k <= cont[l]);
-                            }
-
-                            if (!apuestaCumple) {
-                                // La apuesta era falsa → el jugador que apostó (jugadorAnterior) pierde un dado
-                                if (jugadorAnterior != null && !jugadorAnterior.getMano().Vacio()) {
-                                    jugadorAnterior.QuitarDado();
-                                    out.println("INFO:RESULTADO: La apuesta era falsa. " + jugadorAnterior.getName() + " pierde 1 dado.");
-                                } else {
-                                    // fallback: si jugadorAnterior no tiene dados, penalizar al acusador
-                                    turno.QuitarDado();
-                                    out.println("INFO:RESULTADO: La apuesta era falsa. (penalizado acusador) " + turno.getName() + " pierde 1 dado.");
-                                }
+                        // Si el cliente acusa "MIENTES"
+                        if (respuesta.equalsIgnoreCase("MIENTES")) {
+                            // validar apuesta anterior existe
+                            if (!apuesta.matches("\\d+ d[1-6]")) {
+                                // apuesta previa mal formada -> no se puede comprobar, penalizamos al acusador por seguridad
+                                actual.QuitarDado();
+                                pw.println("RESULTADO: Apuesta previa inválida, acusador penalizado.");
                             } else {
-                                // La apuesta era verdadera → el acusador (turno) pierde un dado
-                                turno.QuitarDado();
-                                out.println("INFO:RESULTADO: La apuesta era verdadera. " + turno.getName() + " pierde 1 dado.");
-                            }
+                                // parsear apuesta previa
+                                String[] parts = apuesta.split(" d");
+                                int kPrev = Integer.parseInt(parts[0]);
+                                int facePrev = Integer.parseInt(parts[1]);
 
-                            // Indicar fin de ronda
-                            ronda = true;
-                            out.println("RONDA_TERMINADA");
-                            // Actualizar dadosJugadorAnterior (no será usado hasta que haya nueva apuesta)
-                            dadosJugadorAnterior = turno.getDadosEnMano();
-                            break;
-                        } else {
-                            // Es una apuesta nueva: guardarla y pasar al siguiente jugador
-                            // validar formato básico: algo como "3 d4" o "10 d6"
-                            if (!isValidApuestaFormat(respuesta)) {
-                                out.println("INFO:ERROR: formato de apuesta inválido. Debes usar 'k dL' (ej: 3 d4).");
-                                // pedir de nuevo al mismo jugador (decrementar i para repetir)
-                                i--;
+                                // contar caras en mesa
+                                int contador = 0;
+                                for (Dado d : dadosEnMesa)
+                                    if (d.getNumero() == facePrev) contador++;
+
+                                if (contador < kPrev) {
+                                    // apuesta falsa: jugadorAnterior pierde 1 dado
+                                    if (jugadorAnterior != null && jugadorAnterior.getDadosEnMano() > 0) {
+                                        jugadorAnterior.QuitarDado();
+                                        pw.println("RESULTADO: La apuesta era falsa. " + jugadorAnterior.getName() + " pierde 1 dado.");
+                                    } else {
+                                        // fallback: si no hay jugador anterior con dados, penalizar acusador
+                                        actual.QuitarDado();
+                                        pw.println("RESULTADO: La apuesta era falsa. (penalizado acusador) " + actual.getName() + " pierde 1 dado.");
+                                    }
+                                } else {
+                                    // apuesta verdadera: acusador pierde 1 dado
+                                    actual.QuitarDado();
+                                    pw.println("RESULTADO: La apuesta era verdadera. " + actual.getName() + " pierde 1 dado.");
+                                }
+                            }
+                            // cerrar la ronda
+                            rondaTerminada = true;
+                            pw.println("RONDATERMINADA:true");
+                        } else if (respuesta.startsWith("APUESTA:")) {
+                            String apuestaRecibida = respuesta.substring("APUESTA:".length()).trim(); // "3 d4"
+
+                            // Validar formato
+                            if (!apuestaRecibida.matches("\\d+ d[1-6]")) {
+                                pw.println("ERROR:APUESTA_INCORRECTA");
+                                // no avanzar turno; repetir para el mismo jugador
                                 continue;
                             }
-                            apuesta = respuesta;
-                            jugadorAnterior = turno;
-                            dadosJugadorAnterior = jugadorAnterior.getDadosEnMano();
-                            out.println("INFO:APUESTA_RECIBIDA:" + apuesta);
-                            // continuar al siguiente jugador
-                        }
-                    } // for jugadores
-                } // while !ronda
 
-                // Después de la ronda, comprobar si hay un ganador
-                int jugadoresConDados = 0;
-                String posibleGanador = "Empty";
+                            // parsear números
+                            String[] p = apuestaRecibida.split(" d");
+                            int kNew = Integer.parseInt(p[0]);
+                            int faceNew = Integer.parseInt(p[1]);
+
+                            // parsear apuesta anterior
+                            int kPrev = 0;
+                            int facePrev = 1;
+                            if (apuesta.matches("\\d+ d[1-6]")) {
+                                String[] pa = apuesta.split(" d");
+                                kPrev = Integer.parseInt(pa[0]);
+                                facePrev = Integer.parseInt(pa[1]);
+                            } else {
+                                // si apuesta anterior no está en formato esperado (salvo inicial "0 d1"), tomar valores por defecto
+                                kPrev = 0;
+                                facePrev = 1;
+                            }
+
+                            // Regla de validez:
+                            // - kNew > kPrev  (y kNew <= totalDados)
+                            // OR
+                            // - kNew == kPrev AND faceNew > facePrev
+                            boolean valido = false;
+                            if (kNew <= 0 || faceNew < 1 || faceNew > 6) {
+                                valido = false;
+                            } else if (kNew > totalDados) {
+                                // no se puede apostar más dados que los que hay en mesa
+                                valido = false;
+                            } else if (kNew > kPrev) {
+                                valido = true;
+                            } else if (kNew == kPrev && faceNew > facePrev) {
+                                valido = true;
+                            } else {
+                                valido = false;
+                            }
+
+                            if (!valido) {
+                                pw.println("ERROR:APUESTA_INCORRECTA");
+                                // no cambiar jugadorAnterior ni avanzar el turno, repetir petición del mismo jugador
+                                continue;
+                            }
+
+                            // apuesta válida: actualizar estado
+                            apuesta = apuestaRecibida;
+                            jugadorAnterior = actual;
+                            pw.println("OK");
+                            // continuar al siguiente jugador (no cerrar ronda)
+                        } else {
+                            // comando desconocido: pedir de nuevo
+                            pw.println("ERROR:COMANDO_INVALIDO");
+                            continue;
+                        }
+                    } // if jugador tiene dados
+                    turno++;
+                } // while !rondaTerminada
+
+                // comprobar ganador
+                int sinDadosAhora = 0;
+                String posibleWinner = "Empty";
                 for (Jugador j : jugadores) {
-                    if (!j.getMano().Vacio()) {
-                        jugadoresConDados++;
-                        posibleGanador = j.getName();
-                    }
+                    if (j.getMano().Vacio()) sinDadosAhora++;
+                    else posibleWinner = j.getName();
                 }
-                if (jugadoresConDados <= 1) {
+                if (sinDadosAhora == jugadores.size() - 1) {
                     winner = true;
-                    out.println("GANADOR:" + posibleGanador);
-                    out.println("INFO: Partida finalizada. Ganador -> " + posibleGanador);
-                    break;
+                    pw.println("WINNER:" + posibleWinner);
                 } else {
-                    // Continuar con la siguiente ronda
-                    out.println("INFO: Comienza nueva ronda.");
+                    pw.println("CONTINUAR");
                 }
+
             } // while !winner
 
-        } catch (IOException | ClassCastException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            try {
-                socket.close();
-            } catch (IOException ioe) {
-                ioe.printStackTrace();
-            }
+            try { socket.close(); } catch (IOException ignored) {}
         }
-    }
-
-    // Helpers para parsear "k dL" (ej "3 d4")
-    private int parseKFromApuesta(String apuesta) {
-        if (apuesta == null) return 0;
-        apuesta = apuesta.replaceAll("\\s+", ""); // "3d4"
-        try {
-            int pos = apuesta.indexOf('d');
-            if (pos > 0) {
-                return Integer.parseInt(apuesta.substring(0, pos));
-            }
-        } catch (Exception ignored) {}
-        return 0;
-    }
-
-    private int parseLFromApuesta(String apuesta) {
-        if (apuesta == null) return 1;
-        apuesta = apuesta.replaceAll("\\s+", "");
-        try {
-            int pos = apuesta.indexOf('d');
-            if (pos >= 0 && pos < apuesta.length() - 1) {
-                return Integer.parseInt(apuesta.substring(pos + 1));
-            }
-        } catch (Exception ignored) {}
-        return 1;
-    }
-
-    private boolean isValidApuestaFormat(String s) {
-        if (s == null) return false;
-        s = s.trim();
-        // acepta formatos como "3 d4", "10 d6", "3d4"
-        String compact = s.replaceAll("\\s+", "");
-        return compact.matches("\\d+d[1-6]");
     }
 }
