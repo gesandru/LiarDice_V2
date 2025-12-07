@@ -4,10 +4,6 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
-/**
- * Cliente que controla a todos los jugadores desde una sola conexión.
- * Protocolo con el servidor según ThreadAdd.java.
- */
 public class Principal {
 
     public static void main(String[] args) {
@@ -20,127 +16,118 @@ public class Principal {
             PrintWriter pw = new PrintWriter(socket.getOutputStream(), true);
             Scanner sc = new Scanner(System.in)
         ) {
-            // Enviar nombres de jugadores
             System.out.println("Introduce los nombres de los jugadores separados por coma (ej: pepe,ana,juan):");
             String nombres = sc.nextLine().trim();
             pw.println(nombres);
 
-            boolean partidaActiva = true;
+            boolean running = true;
 
-            while (partidaActiva) {
-                String linea = br.readLine();
-                if (linea == null) break;
+            while (running) {
+                String line = br.readLine();
+                if (line == null) break;
 
-                if (linea.startsWith("TOTAL:")) {
+                if (line.startsWith("TOTAL:")) {
                     System.out.println("\n=== NUEVA RONDA ===");
-                    System.out.println("Total dados en mesa: " + linea.split(":")[1]);
-                    // A continuación vendrán los turnos
+                    System.out.println("Total dados en mesa: " + line.substring(6));
+                    continue;
+                }
+                if (line.startsWith("WINNER:")) {
+                    System.out.println("\n=== GANADOR: " + line.substring(7));
+                    break;
+                }
+                if (line.startsWith("RESULTADO:")) {
+                    System.out.println(line.substring(10));
+                    continue;
+                }
+                if (line.startsWith("RONDATERMINADA:")) {
+                    System.out.println("Servidor: " + line);
                     continue;
                 }
 
-                if (linea.startsWith("TURNO:")) {
-                    String jugador = linea.split(":", 2)[1];
+                // Si comienza un turno
+                if (line.startsWith("TURNO:")) {
+                    String jugador = line.substring(6);
 
-                    // Leer MANO, APUESTA_ANT, DADOS_ANT (en ese orden, como envía el servidor)
-                    String manoLine = br.readLine();
-                    String apuestaAntLine = br.readLine();
-                    String dadosAntLine = br.readLine();
+                    // leer MANO, APUESTA_ANT, DADOS_ANT (suponemos que el servidor los envía)
+                    String manoLine = br.readLine();          // MANO:...
+                    String apuestaAntLine = br.readLine();   // APUESTA_ANT:...
+                    String dadosAntLine = br.readLine();     // DADOS_ANT:...
 
-                    String mano = manoLine.startsWith("MANO:") ? manoLine.split(":",2)[1] : "";
-                    String apuestaAnt = apuestaAntLine.startsWith("APUESTA_ANT:") ? apuestaAntLine.split(":",2)[1] : "0 d1";
-                    String dadosAnt = dadosAntLine.startsWith("DADOS_ANT:") ? dadosAntLine.split(":",2)[1] : "0";
+                    String mano = manoLine.startsWith("MANO:") ? manoLine.substring(5) : "";
+                    String apuestaAnt = apuestaAntLine.startsWith("APUESTA_ANT:") ? apuestaAntLine.substring(12) : "0 d1";
+                    String dadosAnt = dadosAntLine.startsWith("DADOS_ANT:") ? dadosAntLine.substring(10) : "0";
 
                     System.out.println("\nTurno de → " + jugador);
-                    System.out.println("Tus dados: " + (mano.isEmpty() ? "(sin dados)" : mano));
+                    System.out.println("Tus dados: " + mano);
                     System.out.println("Apuesta anterior: " + apuestaAnt);
                     System.out.println("Dados del jugador anterior: " + dadosAnt);
 
-                    boolean accionAceptada = false;
-                    while (!accionAceptada) {
+                    // ahora ESPERAMOS el prompt para actuar
+                    String prompt = br.readLine();
+                    if (prompt == null) break;
+                    if (!prompt.equals("PIDE_ACCION")) {
+                        // si llega otra cosa inesperada, lo imprimimos y seguimos
+                        System.out.println("Servidor: " + prompt);
+                        continue;
+                    }
+
+                    // Pedir acción al usuario
+                    boolean accionOk = false;
+                    while (!accionOk) {
                         System.out.println("1. Apostar");
                         System.out.println("2. Llamar mentiroso");
+                        System.out.print("Elige (1/2): ");
                         String opc = sc.nextLine().trim();
                         if (!opc.equals("1") && !opc.equals("2")) {
-                            System.out.println("Opción inválida. Intenta de nuevo.");
+                            System.out.println("Opción inválida.");
                             continue;
                         }
-
                         if (opc.equals("2")) {
-                            // Llamar mentiroso
                             pw.println("MIENTES");
-
-                            // leer resultado(s) del servidor:
-                            String res = br.readLine(); // RESULTADO:...
+                            // recibiríamos RESULTADO: y RONDATERMINADA: (si corresponde)
+                            String res = br.readLine();
                             if (res != null && res.startsWith("RESULTADO:")) {
                                 System.out.println(res.substring("RESULTADO:".length()));
+                                String rond = br.readLine();
+                                if (rond != null && rond.startsWith("RONDATERMINADA:")) {
+                                    System.out.println("Servidor: " + rond);
+                                }
                             } else if (res != null && res.startsWith("ERROR:")) {
                                 System.out.println("Servidor: " + res);
                             }
-                            // leer RONDATERMINADA:true
-                            String rond = br.readLine();
-                            if (rond != null && rond.startsWith("RONDATERMINADA:")) {
-                                System.out.println("Servidor: " + rond);
-                            }
-                            accionAceptada = true; // la ronda acaba o continúa según el servidor
+                            accionOk = true;
                         } else {
-                            // Apostar: pedir datos al usuario y enviar al servidor.
-                            System.out.print("Cantidad : ");
+                            // apostar
+                            System.out.print("Cantidad (k): ");
                             String ks = sc.nextLine().trim();
                             System.out.print("Cara (1-6): ");
-                            String faces = sc.nextLine().trim();
+                            String face = sc.nextLine().trim();
+                            pw.println("APUESTA:" + ks + " d" + face);
 
-                            // Formar la apuesta como "APUESTA:k dX"
-                            String apuestaEnv = "APUESTA:" + ks + " d" + faces;
-                            pw.println(apuestaEnv);
-
-                            // Esperar respuesta del servidor: puede ser OK o ERROR:APUESTA_INCORRECTA
+                            // esperar respuesta (OK o ERROR:APUESTA_INCORRECTA)
                             String respuestaSer = br.readLine();
-                            if (respuestaSer == null) { partidaActiva = false; break; }
-
+                            if (respuestaSer == null) { running = false; break; }
                             if (respuestaSer.equals("OK")) {
-                                System.out.println("Apuesta aceptada: " + ks + " d" + faces);
-                                accionAceptada = true;
+                                System.out.println("Apuesta aceptada.");
+                                accionOk = true;
                             } else if (respuestaSer.equals("ERROR:APUESTA_INCORRECTA")) {
-                                System.out.println("ERROR: apuesta incorrecta. Intenta otra apuesta.");
-                                // volver a preguntar al mismo jugador (no cambiar turno)
-                                // continue loop
-                            } else if (respuestaSer.startsWith("ERROR:")) {
-                                System.out.println("Servidor: " + respuestaSer);
-                                // repetir
+                                System.out.println("ERROR: apuesta incorrecta. Intenta otra.");
+                                // volver a iterar y pedir otra apuesta al mismo jugador
                             } else {
-                                // respuestas inesperadas, imprimir y repetir
                                 System.out.println("Servidor: " + respuestaSer);
                             }
                         }
-                    } // while !accionAceptada
+                    } // while accionOk
 
-                    // Después de la acción, el servidor confirmará si la ronda terminó o si hay que continuar:
-                    // - En caso de MIEN TES ya se envió RONDATERMINADA:true por servidor y lo leímos arriba.
-                    // - En caso de APUESTA válida, el servidor seguirá la ronda y luego enviará "CONTINUAR" o "WINNER:..."
-                    String post = br.readLine();
-                    if (post == null) { break; }
-                    if (post.startsWith("WINNER:")) {
-                        System.out.println("\n=== GANADOR: " + post.split(":",2)[1] + " ===");
-                        partidaActiva = false;
-                        break;
-                    } else if (post.equals("CONTINUAR")) {
-                        // seguir
-                        // no imprimimos nada especial
-                    } else {
-                        // puede ser otras líneas; imprimirlas por si acaso
-                        System.out.println("Servidor: " + post);
-                    }
+                    continue;
                 }
 
-                // Por seguridad: si llega WINNER en otra línea fuera del flujo
-                if (linea.startsWith("WINNER:")) {
-                    System.out.println("\n=== GANADOR: " + linea.split(":",2)[1] + " ===");
-                    partidaActiva = false;
-                    break;
-                }
-            } // while partidaActiva
+                // cualquier otro mensaje
+                System.out.println("Servidor: " + line);
+            }
 
             System.out.println("Partida finalizada. Conexión cerrada.");
+
         } catch (Exception e) {
             e.printStackTrace();
         }

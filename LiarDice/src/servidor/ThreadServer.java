@@ -24,7 +24,7 @@ public class ThreadServer implements Runnable {
         try {
             // vamos mandando a cada servidor un cliente
             int port = replicas.get(contador % replicas.size());
-            System.out.println("Thread " + contador + " → replica port " + port);
+            System.out.println("Thread " + contador + ", replica port " + port);
 
             backend = new Socket("localhost", port);
             contador++;
