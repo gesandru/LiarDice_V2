@@ -1,40 +1,42 @@
 package servidor;
 
-import java.io.IOException;
+import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
-import java.util.Arrays;
-import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
-//Podría añadir que el servidor se divida en 3 servidores, cada uno con su propio pool
-//de threads, para manejar mejor cargas
 public class Servidor {
-	
-	// Una lista de servidores replicados 
-	private static final List<Integer> replicas = Arrays.asList(55556, 55557, 55558);
 
-	private static int contador = 0;
+    private static final int Puerto = 55555;
+    //Pool de 20 threads para manejar redirecciones
+    
+    
+    public static void main(String[] args) throws Exception {
 
-    public static void main(String[] args) throws ClassNotFoundException {
-        ExecutorService pool = Executors.newCachedThreadPool();
-        try(ServerSocket ss = new ServerSocket(55555)){
-            while(true) {
-                try{
-                    Socket s = ss.accept();
-                    ThreadServer ts = new ThreadServer(s, replicas, contador);
-                    pool.execute(ts);
-                    contador++;
+    	ExecutorService pool = Executors.newFixedThreadPool(20);
+    	
+        //Lanzar salas del juego en puertos distintos
+        new Thread(() -> new ServidorAdd("Sala 1", 55556).start()).start();
+        new Thread(() -> new ServidorAdd("Sala 2", 55557).start()).start();
+        new Thread(() -> new ServidorAdd("Sala 3", 55558).start()).start();
 
-                }
-                catch(Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        } catch (IOException e) {
-            e.printStackTrace();
-            pool.shutdown();
-        }
+        System.out.println("SERVIDOR PROXY escuchando en puerto " + Puerto);
+
+        ServerSocket ss = new ServerSocket(Puerto);
+
+        
+        try {
+        while (true) {
+            Socket cliente = ss.accept();
+            
+				pool.submit(new ThreadServer(cliente));
+			}
+        } catch (Exception e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		} finally {
+			pool.shutdown();
+		}
     }
 }
