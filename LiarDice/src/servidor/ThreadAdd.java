@@ -2,15 +2,19 @@ package servidor;
 
 import objetos.Dado;
 import objetos.Jugador;
+
 import java.io.*;
 import java.net.Socket;
 import java.util.*;
 
 public class ThreadAdd implements Runnable {
-    private final List<Socket> clientes;
 
-    public ThreadAdd(List<Socket> clientes) {
-        this.clientes = clientes;
+    private final List<Socket> clientes;
+    private final int maxJug;
+
+    public ThreadAdd(List<Socket> sockets, int maxJugadores) {
+        this.clientes = sockets;
+        this.maxJug = maxJugadores;
     }
 
     @Override
@@ -20,136 +24,131 @@ public class ThreadAdd implements Runnable {
         Map<Socket, Jugador> jugadoresMap = new HashMap<>();
 
         try {
-            // Inicializar sockets y pedir nombre
+            // Inicializar jugadores
             for (Socket s : clientes) {
                 BufferedReader br = new BufferedReader(new InputStreamReader(s.getInputStream()));
                 PrintWriter pw = new PrintWriter(s.getOutputStream(), true);
+
                 lectores.put(s, br);
                 escritores.put(s, pw);
 
                 pw.println("Introduce tu nombre:");
-                String nombre = br.readLine().trim();
+                String nombre = br.readLine();
                 jugadoresMap.put(s, new Jugador(nombre));
             }
 
             List<Jugador> jugadores = new ArrayList<>(jugadoresMap.values());
+
             boolean winner = false;
 
             while (!winner) {
-                // Reset ronda
                 String apuesta = "0 d1";
                 Jugador jugadorAnterior = null;
 
-                // Tirar dados
-                List<Dado> dadosMesa = new ArrayList<>();
+                List<Dado> mesa = new ArrayList<>();
                 for (Jugador j : jugadores) {
                     j.Nuevoturno();
-                    dadosMesa.addAll(j.getMano().getDados());
+                    mesa.addAll(j.getMano().getDados());
                 }
 
-                boolean rondaTerminada = false;
+                boolean finRonda = false;
                 int turno = 0;
 
-                while (!rondaTerminada) {
-                    turno = turno % jugadores.size();
+                while (!finRonda) {
+                    turno %= jugadores.size();
                     Jugador actual = jugadores.get(turno);
-                    Socket sActual = null;
-                    for (Map.Entry<Socket, Jugador> e : jugadoresMap.entrySet()) {
-                        if (e.getValue() == actual) sActual = e.getKey();
-                    }
-                    PrintWriter pw = escritores.get(sActual);
-                    BufferedReader br = lectores.get(sActual);
 
                     if (actual.getMano().Vacio()) {
                         turno++;
                         continue;
                     }
 
-                    // Enviar información del turno
-                    pw.println("=== NUEVO TURNO ===");
+                    Socket sActual = jugadoresMap.entrySet().stream()
+                            .filter(e -> e.getValue() == actual)
+                            .findFirst().get().getKey();
+
+                    PrintWriter pw = escritores.get(sActual);
+                    BufferedReader br = lectores.get(sActual);
+
+                    pw.println("=== TURNO ===");
                     pw.println("Tus dados: " + actual.getMano().Mostrar());
-                    pw.println("Apuesta anterior: " + apuesta);
-                    pw.println("Dados del jugador anterior: " + ((jugadorAnterior == null) ? 0 : jugadorAnterior.getDadosEnMano()));
-                    pw.println("1. Apostar");
-                    pw.println("2. Llamar mentiroso");
+                    pw.println("Apuesta actual: " + apuesta);
+                    pw.println("Opciones: (n dn))Hacer apuesta (Ej: 3 d4)  2) Mentiroso");
 
-                    String accion;
-                    while (true) {
-                        pw.println("Elige (1/2) o escribe apuesta (ej: 3 d4):");
-                        accion = br.readLine();
-                        if (accion == null) throw new IOException("Cliente desconectado");
-                        accion = accion.trim();
+                    String acc = br.readLine();
+                    if (acc == null) return;
 
-                        if (accion.equals("2")) { // mentiroso
-                            if (jugadorAnterior == null) {
-                                pw.println("ERROR: No hay apuesta anterior");
-                                continue;
-                            }
+                    acc = acc.trim();
 
-                            String[] parts = apuesta.split(" d");
-                            int kPrev = Integer.parseInt(parts[0]);
-                            int facePrev = Integer.parseInt(parts[1]);
+                    // Mentiroso
+                    if (acc.equals("2")) {
+                        int kPrev = Integer.parseInt(apuesta.split(" d")[0]);
+                        int caraPrev = Integer.parseInt(apuesta.split(" d")[1]);
 
-                            int contador = 0;
-                            for (Dado d : dadosMesa) if (d.getNumero() == facePrev) contador++;
+                        int cont = 0;
+                        for (Dado d : mesa)
+                            if (d.getNumero() == caraPrev) cont++;
 
-                            if (contador < kPrev) {
-                                jugadorAnterior.QuitarDado();
-                                pw.println("RESULTADO: La apuesta era falsa. " + jugadorAnterior.getName() + " pierde 1 dado.");
-                            } else {
-                                actual.QuitarDado();
-                                pw.println("RESULTADO: La apuesta era verdadera. " + actual.getName() + " pierde 1 dado.");
-                            }
-
-                            rondaTerminada = true;
-                            break;
-
-                        } else if (accion.matches("\\d+ d[1-6]")) { // apuesta
-                            String[] p = accion.split(" d");
-                            int kNew = Integer.parseInt(p[0]);
-                            int faceNew = Integer.parseInt(p[1]);
-
-                            String[] prev = apuesta.split(" d");
-                            int kPrev = Integer.parseInt(prev[0]);
-                            int facePrev = Integer.parseInt(prev[1]);
-
-                            boolean valido = (kNew > kPrev) || (kNew == kPrev && faceNew > facePrev);
-                            if (!valido) {
-                                pw.println("ERROR:APUESTA_INCORRECTA");
-                                continue;
-                            }
-
-                            apuesta = accion;
-                            jugadorAnterior = actual;
-                            break;
-
+                        if (cont < kPrev) {
+                            jugadorAnterior.QuitarDado();
+                            broadcast(escritores, jugadorAnterior.getName() + " pierde un dado.");
                         } else {
-                            pw.println("ERROR:COMANDO_INVALIDO");
+                            actual.QuitarDado();
+                            broadcast(escritores, actual.getName() + " pierde un dado.");
                         }
+
+                        finRonda = true;
+                        continue;
                     }
 
-                    turno++;
+                    // Apostar
+                    if (acc.matches("\\d+ d[1-6]")) {
+                        int kNew = Integer.parseInt(acc.split(" d")[0]);
+                        int caraNew = Integer.parseInt(acc.split(" d")[1]);
+
+                        int kPrev = Integer.parseInt(apuesta.split(" d")[0]);
+                        int caraPrev = Integer.parseInt(apuesta.split(" d")[1]);
+
+                        boolean valido = (kNew > kPrev) || (kNew == kPrev && caraNew > caraPrev);
+
+                        if (!valido) {
+                            pw.println("Apuesta inválida.");
+                            continue;
+                        }
+
+                        apuesta = acc;
+                        jugadorAnterior = actual;
+                        turno++;
+                        continue;
+                    }
+
+                    pw.println("Entrada inválida.");
                 }
 
-                // Comprobar ganador
-                List<Jugador> conDados = new ArrayList<>();
-                for (Jugador j : jugadores) if (!j.getMano().Vacio()) conDados.add(j);
-                if (conDados.size() <= 1) {
+                // Revisar jugadores vivos
+                List<Jugador> vivos = new ArrayList<>();
+                for (Jugador j : jugadores)
+                    if (!j.getMano().Vacio())
+                        vivos.add(j);
+
+                if (vivos.size() == 1) {
+                    broadcast(escritores, "FIN DE PARTIDA! GANADOR: " + vivos.get(0).getName());
                     winner = true;
-                    String ganador = (conDados.isEmpty()) ? "NINGUNO" : conDados.get(0).getName();
-                    for (PrintWriter pw : escritores.values()) {
-                        pw.println("GANADOR: " + ganador);
-                    }
                 }
             }
 
-        } catch (IOException e) {
+        } catch (Exception e) {
             e.printStackTrace();
         } finally {
-            // Cerrar todos los sockets al terminar la partida
             for (Socket s : clientes) {
                 try { s.close(); } catch (IOException ignored) {}
             }
+        }
+    }
+
+    private void broadcast(Map<Socket, PrintWriter> escritores, String msg) {
+        for (PrintWriter w : escritores.values()) {
+            w.println(msg);
         }
     }
 }

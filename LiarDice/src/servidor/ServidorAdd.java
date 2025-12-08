@@ -6,51 +6,53 @@ import java.util.*;
 import java.util.concurrent.*;
 
 public class ServidorAdd {
-    private final String nombreSala;
-    private final int maxJugadores;
+
+    private final String nombre;
+    private final int max;
     private final int puerto;
+
     private final List<Socket> jugadores = Collections.synchronizedList(new ArrayList<>());
     private final ExecutorService pool = Executors.newCachedThreadPool();
 
-    public ServidorAdd(String nombre, int maxJug, int puerto) {
-        this.nombreSala = nombre;
-        this.maxJugadores = maxJug;
-        this.puerto = puerto;
+    public ServidorAdd(String n, int m, int p) {
+        nombre = n;
+        max = m;
+        puerto = p;
+    }
+
+    public int getPuerto() {
+        return puerto;
     }
 
     public void iniciar() {
-        pool.submit(() -> {
-            try (ServerSocket serverSocket = new ServerSocket(puerto)) {
-                System.out.println(nombreSala + " escuchando en puerto " + puerto);
+        new Thread(() -> {
+            try (ServerSocket ss = new ServerSocket(puerto)) {
+                System.out.println(nombre + " escuchando en puerto " + puerto);
 
                 while (true) {
-                    Socket cliente = serverSocket.accept();
-                    jugadores.add(cliente);
-                    pool.submit(() -> manejarJugador(cliente));
-
-                    if (jugadores.size() == maxJugadores) {
-                        List<Socket> partida = new ArrayList<>(jugadores);
-                        jugadores.clear();
-                        pool.submit(new ThreadAdd(partida));
-                    }
+                    Socket cliente = ss.accept();
+                    agregarJugador(cliente);
                 }
+
             } catch (IOException e) {
                 e.printStackTrace();
             }
-        });
+        }).start();
     }
 
-    private void manejarJugador(Socket cliente) {
+    public synchronized void agregarJugador(Socket cliente) {
         try {
-            PrintWriter pw = new PrintWriter(cliente.getOutputStream(), true);
-            pw.println("Conectado a " + nombreSala + ". Esperando más jugadores...");
-            // NO cerrar socket aquí
-        } catch (IOException e) {
-            e.printStackTrace();
+            new PrintWriter(cliente.getOutputStream(), true)
+                    .println("Conectado a " + nombre + ". Esperando más jugadores...");
+        } catch (IOException ignored) {}
+
+        jugadores.add(cliente);
+
+        if (jugadores.size() == max) {
+            List<Socket> partida = new ArrayList<>(jugadores);
+            jugadores.clear();
+
+            pool.submit(new ThreadAdd(partida, max));
         }
-    }
-    
-    public int getPuerto() {
-    	return this.puerto;
     }
 }

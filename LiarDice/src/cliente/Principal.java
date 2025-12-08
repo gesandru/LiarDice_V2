@@ -2,32 +2,55 @@ package cliente;
 
 import java.io.*;
 import java.net.Socket;
+import java.util.Scanner;
 
 public class Principal {
+    public static void main(String[] args) {
+        Scanner sc = new Scanner(System.in);
 
-    private Socket socket;
-    private BufferedReader br;
-    private PrintWriter pw;
+        try (
+                Socket proxy = new Socket("localhost", 55555);
+                BufferedReader br = new BufferedReader(new InputStreamReader(proxy.getInputStream()));
+                PrintWriter pw = new PrintWriter(proxy.getOutputStream(), true)
+        ) {
 
-    public void conectar() throws Exception {
-        socket = new Socket("localhost", 55555);
-        br = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-        pw = new PrintWriter(socket.getOutputStream(), true);
-    }
+            // Pregunta tipo de partida
+            System.out.println(br.readLine());
+            String tipo = sc.nextLine();
+            pw.println(tipo);
 
-    public void enviar(String msg) {
-        pw.println(msg);
-    }
+            // Recibir puerto de sala
+            String respuesta = br.readLine(); // ej: OK:55557
+            int puertoSala = Integer.parseInt(respuesta.split(":")[1].trim());
 
-    public String recibir() throws Exception {
-        return br.readLine();
-    }
+            // Conectarse a la sala
+            Socket sala = new Socket("localhost", puertoSala);
+            BufferedReader brSala = new BufferedReader(new InputStreamReader(sala.getInputStream()));
+            PrintWriter pwSala = new PrintWriter(sala.getOutputStream(), true);
 
-    public BufferedReader getBR() {
-        return br;
-    }
+            // Hilo de lectura de mensajes
+            Thread lector = new Thread(() -> {
+                try {
+                    String line;
+                    while ((line = brSala.readLine()) != null) {
+                        System.out.println(line);
+                    }
+                    System.out.println("La partida ha terminado.");
+                } catch (IOException ignored) {}
+                finally {
+                    try { sala.close(); } catch (IOException ignored) {}
+                }
+            });
+            lector.start();
 
-    public PrintWriter getPW() {
-        return pw;
+            // Enviar datos del jugador y jugadas
+            while (!sala.isClosed()) {
+                if (!sc.hasNextLine()) break;
+                pwSala.println(sc.nextLine());
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
