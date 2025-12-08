@@ -1,4 +1,8 @@
 /*
+ * Clases para pruebas que ahora son innecesarias
+ */
+
+/*
 package servidor;
 
 import java.io.IOException;

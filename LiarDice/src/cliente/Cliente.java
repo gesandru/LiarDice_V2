@@ -1,4 +1,6 @@
-package cliente;
+//Clase innecesaria
+
+/*package cliente;
 
 import java.io.*;
 import java.net.Socket;
@@ -31,3 +33,4 @@ public class Cliente {
         return pw;
     }
 }
+*/

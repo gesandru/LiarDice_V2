@@ -40,6 +40,7 @@ public class ServidorAdd {
         }).start();
     }
 
+    //Aquí se van añadiendo los jugadores hasta que hay suficientes para empezar la partida
     public synchronized void agregarJugador(Socket cliente) {
         try {
             new PrintWriter(cliente.getOutputStream(), true)

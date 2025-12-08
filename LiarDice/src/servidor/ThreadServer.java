@@ -3,6 +3,7 @@ package servidor;
 import java.io.*;
 import java.net.Socket;
 
+//Devuelve al cliente el puerto del ServidorAdd al que debe conectarse
 public class ThreadServer implements Runnable {
 
     private final Socket cliente;
@@ -34,6 +35,7 @@ public class ThreadServer implements Runnable {
 
             ServidorAdd destino = tipo.equals("2") ? s2 : (tipo.equals("3") ? s3 : s4);
 
+            //Devuelve al cliente a que ServidorAdd se tiene que conectar
             pw.println("OK:" + destino.getPuerto());
 
         } catch (IOException ignored) {

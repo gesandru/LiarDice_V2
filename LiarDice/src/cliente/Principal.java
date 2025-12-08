@@ -4,6 +4,34 @@ import java.io.*;
 import java.net.Socket;
 import java.util.Scanner;
 
+/*
+ * Cambios principales del juego respecto a la versión 1:
+ * Cambio de la lógica del juego para que todo se trate dentro del thread del servidor,
+ * en la versión anterior era un lío con ObjectOutputStream y creación de jugadores y trato de jugadores dentro del cliente.
+ * En la nueva versión el cliente solo toma decisiones y para eso solo necesitamos un reader y un writer.
+ * 
+ * Cambio de la clase Servidor a que sea un proxy inverso, indicandole al cliente donde
+ * están los servidores donde está la lógica del juego.
+ * 
+ * Cambio de la implementación para que cada cliente represente un solo jugador, no la partida completa.
+ * Por lo que tuve que cambiar la lógica de todo.
+ */
+
+/* Funcionamiento general del programa:
+ * Primero se lanza Servidor que se queda esperando a que se conecten clientes.
+ * Cada conexión de Principal representa un jugador.
+ * Al conectarse un jugador le indíca qué tipo de partida quiere jugar (cúantos jugadores quiere que haya en la partida)
+ * El Servidor le indica al jugador a qué puerto de ServidorAdd debe conectarse
+ * Al conectarse al ServidorAdd se queda esperando y cuando hay suficientes jugadores conectados crea una sala
+ * y empieza el juego.
+ * 
+ * Problemas: 
+ * Una vez terminada la partida hay que desconectarse manualmente. El Servidor muestra errores pero se cierra la conexión
+ * pero sigue funcionando perfectamente.
+ * 
+ * Los cierres de algunas cosas son raros pero es necesario hacerlo así o no funciona. Aún así, todo debería cerrarse 
+ * correctamente al cerrar el socket del cliente (de nuevo, el Servidor muestra errores pero sigue funcionando perfectamente).
+ */
 public class Principal {
     public static void main(String[] args) {
         Scanner sc = new Scanner(System.in);

@@ -7,6 +7,7 @@ import java.io.*;
 import java.net.Socket;
 import java.util.*;
 
+
 public class ThreadAdd implements Runnable {
 
     private final List<Socket> clientes;
@@ -17,8 +18,10 @@ public class ThreadAdd implements Runnable {
         this.maxJug = maxJugadores;
     }
 
+    //Aquí está la lógica de la partida
     @Override
     public void run() {
+    	//Los mapas son para poder saber qué reader y writer es de qué jugador
         Map<Socket, BufferedReader> lectores = new HashMap<>();
         Map<Socket, PrintWriter> escritores = new HashMap<>();
         Map<Socket, Jugador> jugadoresMap = new HashMap<>();
