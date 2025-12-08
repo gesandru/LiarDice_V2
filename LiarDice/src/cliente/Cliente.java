@@ -3,7 +3,7 @@ package cliente;
 import java.io.*;
 import java.net.Socket;
 
-public class Principal {
+public class Cliente {
 
     private Socket socket;
     private BufferedReader br;

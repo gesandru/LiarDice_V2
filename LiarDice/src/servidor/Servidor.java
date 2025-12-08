@@ -1,6 +1,6 @@
 package servidor;
 
-import java.io.PrintWriter;
+import java.io.IOException;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.concurrent.ExecutorService;
@@ -8,35 +8,30 @@ import java.util.concurrent.Executors;
 
 public class Servidor {
 
-    private static final int Puerto = 55555;
-    //Pool de 20 threads para manejar redirecciones
-    
-    
-    public static void main(String[] args) throws Exception {
+    public static void main(String[] args) {
 
-    	ExecutorService pool = Executors.newFixedThreadPool(20);
-    	
-        //Lanzar salas del juego en puertos distintos
-        new Thread(() -> new ServidorAdd("Sala 1", 55556).start()).start();
-        new Thread(() -> new ServidorAdd("Sala 2", 55557).start()).start();
-        new Thread(() -> new ServidorAdd("Sala 3", 55558).start()).start();
+        // Salas del servidor
+        ServidorAdd sala2 = new ServidorAdd("Sala de 2 jugadores", 2, 55556);
+        ServidorAdd sala3 = new ServidorAdd("Sala de 3 jugadores", 3, 55557);
+        ServidorAdd sala4 = new ServidorAdd("Sala de 4 jugadores", 4, 55558);
 
-        System.out.println("SERVIDOR PROXY escuchando en puerto " + Puerto);
+        sala2.iniciar();
+        sala3.iniciar();
+        sala4.iniciar();
 
-        ServerSocket ss = new ServerSocket(Puerto);
+        int puertoProxy = 55555;
+        ExecutorService pool = Executors.newCachedThreadPool();
 
-        
-        try {
-        while (true) {
-            Socket cliente = ss.accept();
-            
-				pool.submit(new ThreadServer(cliente));
-			}
-        } catch (Exception e) {
-			// TODO Auto-generated catch block
-			e.printStackTrace();
-		} finally {
-			pool.shutdown();
-		}
+        try (ServerSocket serverSocket = new ServerSocket(puertoProxy)) {
+            System.out.println("Servidor proxy escuchando en puerto " + puertoProxy);
+
+            while (true) {
+                Socket cliente = serverSocket.accept();
+                pool.submit(new ThreadServer(cliente, sala2, sala3, sala4));
+            }
+
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
     }
 }
